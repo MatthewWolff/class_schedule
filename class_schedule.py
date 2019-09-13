@@ -1,215 +1,129 @@
-import datetime
-import selenium
-from selenium import webdriver
-import time
-from icalendar import Calendar, Event
+#!/usr/bin/env python3
+
 import fileinput
+from collections import defaultdict
+from datetime import datetime
 from getpass import getpass
+from time import sleep
+
+from icalendar import Calendar, Event
+from selenium import webdriver
+
+cal = Calendar()
+ical_name = '{}_schedule.ics'
 
 
+def add_class_to_calendar(start_time, end_time, name, location, days):
+    def make_event(start_date, count=14):
+        start_datetime = datetime.strptime(start_date + ' ' + str(start_time), '%Y-%m-%d %H:%M')
+        end_datetime = datetime.strptime(start_date + ' ' + str(end_time), '%Y-%m-%d %H:%M')
 
-def buildEvent(calendar,startTime,endTime,name,location,days):
-    e = Event()
-    e.add('summary',name)
-    e.add('location',location)
-
-    if('M' in days):
+        event_parameters = {
+            'summary': name,
+            'location': location,
+            'dtstart': start_datetime,
+            'dtend': end_datetime,
+            'dtstamp': datetime.now(),
+            'rrule': {'freq': 'weekly', 'count': count}
+        }
         e = Event()
-        e.add('summary',name)
-        e.add('location',location)
-        start_datetime = datetime.datetime.strptime('2019-09-09 ' + str(startTime),"%Y-%m-%d %H:%M")
-        end_datetime = datetime.datetime.strptime('2019-09-09 ' + str(endTime),"%Y-%m-%d %H:%M")
-        e.add('dtstart',start_datetime)
-        e.add('dtend',end_datetime)
-        e.add('dtstamp',datetime.datetime.now())
-        e.add('rrule', {'freq': 'weekly','count': '14'})
-        c.add_component(e)
-    if('T' in days):
-        e = Event()
-        e.add('summary',name)
-        e.add('location',location)
-        start_datetime = datetime.datetime.strptime('2019-09-10 ' + str(startTime), "%Y-%m-%d %H:%M")
-        end_datetime = datetime.datetime.strptime('2019-09-10 ' + str(endTime), "%Y-%m-%d %H:%M")
-        e.add('dtstart', start_datetime)
-        e.add('dtend', end_datetime)
-        e.add('dtstamp', datetime.datetime.now())
-        e.add('rrule', {'freq': 'weekly','count': '14'})
-        c.add_component(e)
-    if('W' in days):
-        e = Event()
-        e.add('summary',name)
-        e.add('location',location)
-        start_datetime = datetime.datetime.strptime('2019-09-04 ' + str(startTime), "%Y-%m-%d %H:%M")
-        end_datetime = datetime.datetime.strptime('2019-09-04 ' + str(endTime), "%Y-%m-%d %H:%M")
-        e.add('dtstart', start_datetime)
-        e.add('dtend', end_datetime)
-        e.add('dtstamp', datetime.datetime.now())
-        e.add('rrule', {'freq': 'weekly','count': '15'})
-        c.add_component(e)
-    if('R' in days):
-        e = Event()
-        e.add('summary',name)
-        e.add('location',location)
-        start_datetime = datetime.datetime.strptime('2019-09-05 ' + str(startTime), "%Y-%m-%d %H:%M")
-        end_datetime = datetime.datetime.strptime('2019-09-05 ' + str(endTime), "%Y-%m-%d %H:%M")
-        e.add('dtstart', start_datetime)
-        e.add('dtend', end_datetime)
-        e.add('dtstamp', datetime.datetime.now())
-        e.add('rrule', {'freq': 'weekly','count': '14'})
-        c.add_component(e)
-    if('F' in days):
-        e = Event()
-        e.add('summary',name)
-        e.add('location',location)
-        start_datetime = datetime.datetime.strptime('2019-09-06 ' + str(startTime), "%Y-%m-%d %H:%M")
-        end_datetime = datetime.datetime.strptime('2019-09-06 ' + str(endTime), "%Y-%m-%d %H:%M")
-        e.add('dtstart', start_datetime)
-        e.add('dtend', end_datetime)
-        e.add('dtstamp', datetime.datetime.now())
-        e.add('rrule', {'freq': 'weekly','count': '14'})
-        c.add_component(e)
+        [e.add(*param) for param in event_parameters.items()]
+        cal.add_component(e)
+
+    if 'M' in days: make_event(start_date='2019-09-09')
+    if 'T' in days: make_event(start_date='2019-09-10')
+    if 'W' in days: make_event(start_date='2019-09-04', count=15)
+    if 'R' in days: make_event(start_date='2019-09-05')
+    if 'F' in days: make_event(start_date='2019-09-06')
 
 
-pass
-
-def amto24(ampmTime):
-
-    hourTime = ampmTime.split(':')
-    if 'AM' in hourTime[1]:
-        hour = int(hourTime[0])
-        minute = hourTime[1][:2]
-
-    elif 'PM' in hourTime[1]:
-        hour = int(hourTime[0])
-        if(hour == 12):
-            hour = hour #do nothing
-        else:
-            hour = hour+12
-        minute = hourTime[1][:2]
-
-    return str(hour)+':'+minute
+def amto24(timezone_time):
+    hour_time = timezone_time.split(':')
+    hour = int(hour_time[0])
+    hour = hour + 12 if 'PM' in hour_time[1] and hour is not 12 else hour
+    minute = hour_time[1][:2]
+    return '{}:{}'.format(hour, minute)
 
 
-pass
+def build_section_dict(class_name, section_data, location_dict):
+    section_type, weekdays, times = section_data.replace(' - ', '-').split()  # remove spaces splitting
+    start, end = times.split('-')
+    name = class_name + ' ' + section_type
 
-print('Enter your NetID')
-username = input()
-print('Enter your password')
-pw = getpass()
-
-#open chrome and go to CSE schedule
-browser = selenium.webdriver.Chrome()
-url = "https://enroll.wisc.edu/scheduler"
-browser.get(url) #navigate to the page
-
-#fine the NetID/Username elements
-NetID = browser.find_element_by_id("j_username")
-password = browser.find_element_by_id("j_password")
+    section_dict = {
+        'start_time': amto24(start),
+        'end_time': amto24(end),
+        'name': name,
+        'location': location_dict[name],
+        'days': weekdays,
+    }
+    return section_dict
 
 
-NetID.send_keys(username)
-password.send_keys(pw)
-pw = None #get rid of password
+def scrape_schedule(user, pw):
+    with webdriver.Chrome() as browser:  # open Chrome instance via selenium
+        # go to CSE schedule
+        browser.get('https://enroll.wisc.edu/scheduler')
 
-#finish login
-submitButton = browser.find_element_by_name("_eventId_proceed")
-submitButton.click()
-time.sleep(10) #wait for page to load
+        # find the NetID/Username elements
+        netID, password = browser.find_element_by_id('j_username'), browser.find_element_by_id('j_password')
 
-innerHTML = browser.execute_script("return document.body.innerHTML") #get the HTML from the page
+        # login
+        netID.send_keys(user)
+        password.send_keys(pw.pop())  # send/delete password
+        browser.find_element_by_name('_eventId_proceed').click()
+        sleep(10)
 
-#Get class information with building/room location
-classWithLocation = browser.find_elements_by_class_name("fc-content")
+        # Get class information with building/room location
+        class_w_location = [c.text for c in browser.find_elements_by_class_name('fc-content')]
 
-#Get class information with days/times
-#classWithDays = browser.find_elements_by_xpath("//*[@id=\"scheduler-view\"]/md-card[1]/md-content[1]/section[1]/md-list[2]/md-list-item[1]/div[1]/div[2]/div[1]/div[1]")
-classWithDays = []
-i=1
-while len(browser.find_elements_by_xpath(f"//*[@id=\"scheduler-view\"]/md-card[1]/md-content[1]/section[1]/md-list[2]/md-list-item[{i}]/div[1]/div[2]/div[1]/div[1]")) is not 0:
-    classWithDays.append(browser.find_elements_by_xpath(f"//*[@id=\"scheduler-view\"]/md-card[1]/md-content[1]/section[1]/md-list[2]/md-list-item[{i}]/div[1]/div[2]/div[1]/div[1]")[0])
-    i += 1
-
-#get only the text for classes with days
-classWithDaysText = []
-for cls in classWithDays:
-    if('Online' not in cls.text):
-        classWithDaysText.append(cls.text) ##check for online sections here
-#get only the text for classes with locations
-classWithLocationText = []
-for cls in classWithLocation:
-    classWithLocationText.append(cls.text.replace('check_circle',''))
+        # Get class information with days/times
+        xpath = '//*[@id="scheduler-view"]/md-card[1]/md-content[1]/section[1]/md-list[2]/md-list-item[{}]/div[1]/div[2]/div[1]/div[1]'
+        class_w_days = list()
+        while len(browser.find_elements_by_xpath(xpath.format(len(class_w_days) + 1))) is not 0:
+            class_w_days.append(browser.find_elements_by_xpath(xpath.format(len(class_w_days) + 1))[0].text)
+    return class_w_days, class_w_location
 
 
+def parse_class_data(class_sections, class_locs):
+    # get only the relevant text for classes with days
+    class_with_days_text = [cls for cls in class_sections if 'Online' not in cls]  # exclude online sections
+    class_with_location_text = [cls.replace('check_circle', '') for cls in class_locs]
 
-#get unique set of classes
-classWithLocationText = list(set(classWithLocationText))
-i = 0
-#get 2D list of class attributes
-classWithLoc2D = []
-for classes in classWithLocationText:
-    classWithLocationText[i] = classWithLocationText[i].replace('-','\n')
-    tempClass = classWithLocationText[i].split('\n')
+    # split up classes into a list of their attributes
+    class_loc_2d = [classes.split('\n') for classes in class_with_location_text]
+    class_day_2d = [classes.split('\n') for classes in class_with_days_text if 'Online section' not in classes]
 
-    classWithLoc2D.append([])
-    for cls in tempClass:
-        classWithLoc2D[i].append(cls)
-    i += 1
+    # store these attributes in dictionaries by class name
+    c_section_info = dict((c[0], c[2:]) for c in class_day_2d)
+    c_locations = dict((' '.join(c[1].split()[:-1]).replace('(', ''), c[2]) for c in class_loc_2d)
 
-#get 2D list of class attributes
-i = 0
-classWithDay2D = []
-for classes in classWithDaysText:
-    if (not 'Online section' in classWithDaysText[i]):
-        tempClass = classWithDaysText[i].split('\n')
-        classWithDay2D.append([])
-        for cls in tempClass:
-            classWithDay2D[i].append(cls)
-        i += 1
-
-for classLoc in classWithLoc2D:
-
-    className = classLoc[2][:len(classLoc[2])-10] #get the class name
-    classType = classLoc[2][len(classLoc[2])-8:len(classLoc[2])-5] #get the class type (ie dis, lab, lec)
-
-    for classDay in classWithDay2D:
-        #only lec
-        if(len(classDay) == 3):
-            if(className == classDay[0] and classType == classDay[2][:3]):
-                classLoc.append(classDay[2].split()[1])
-        #lec & dis/lab
-        elif(len(classDay) == 4):
-            if (className == classDay[0] and classType == classDay[2][:3]):
-                classLoc.append(classDay[2].split()[1])
-            elif(className == classDay[0] and classType == classDay[3][:3]):
-                classLoc.append(classDay[3].split()[1])
-        #lec & dis & lab
-        elif(len(classDay) == 5):
-            if (className == classDay[0] and classType == classDay[2][:3]):
-                classLoc.append(classDay[2].split()[1])
-            elif (className == classDay[0] and classType == classDay[3][:3]):
-                classLoc.append(classDay[3].split()[1])
-            elif (className == classDay[0] and classType == classDay[4][:3]):
-                classLoc.append(classDay[4].split()[1])
+    return c_section_info, c_locations
 
 
-c = Calendar()
-for classes in classWithLoc2D:
+if __name__ == '__main__':
+    # acquire user credentials
+    username = input('Enter your NetID: ')
+    secret_password = [getpass()]  # store in list so we don't need to manually delete after one-time use
 
-    startTime = amto24(classes[0])
-    endTime = amto24(classes[1])
-    name = classes[2]
-    location = classes[3]
-    days = classes[4]
-    buildEvent(c,startTime,endTime,name,location,days)
+    # scrape info
+    class_section_info, class_locations = parse_class_data(*scrape_schedule(username, secret_password))
 
-with open(f'{username}_schedule.ical','wb') as schedule:
-    schedule.write(c.to_ical())
+    # build schedule
+    class_list = list()
+    for class_, sections in class_section_info.items():
+        for section in sections:
+            class_list.append(build_section_dict(class_, section, class_locations))
 
+    # generate an icalendar from schedule
+    [add_class_to_calendar(**class_) for class_ in class_list]
 
+    # write icalendar
+    with open(ical_name.format(username), 'wb') as schedule:
+        schedule.write(cal.to_ical())
 
-#add reminder for 15 minutes before the class starts
-for line in fileinput.input(f'{username}_schedule.ical',inplace=True):
-    print(line.rstrip().replace('END:VEVENT','BEGIN:VALARM\nACTION:DISPLAY\nDESCRIPTION:REMINDER\nTRIGGER:-PT15M\nEND:VALARM\nEND:VEVENT'))
-
-browser.close()
-
+    # add reminders 15 min beforehand
+    for line in fileinput.input(ical_name.format(username), inplace=True):
+        print(line.rstrip().
+              replace('END:VEVENT',
+                      'BEGIN:VALARM\nACTION:DISPLAY\nDESCRIPTION:REMINDER\nTRIGGER:-PT15M\nEND:VALARM\nEND:VEVENT'))
